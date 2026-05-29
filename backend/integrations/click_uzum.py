@@ -13,10 +13,9 @@ class ClickClient:
         self.merchant_id = merchant_id
         self.service_id = service_id
         self.secret_key = secret_key
-        self._auth_header = self._make_auth()
 
     def _make_auth(self) -> str:
-        timestamp = str(int(datetime.utcnow().timestamp()))
+        timestamp = str(int(datetime.now().timestamp()))
         digest = hashlib.sha1(f"{timestamp}{self.secret_key}".encode()).hexdigest()
         return f"{self.merchant_id}:{digest}:{timestamp}"
 
@@ -25,7 +24,7 @@ class ClickClient:
             resp = await client.get(
                 f"{self.BASE_URL}{path}",
                 headers={
-                    "Auth": self._auth_header,
+                    "Auth": self._make_auth(),
                     "Content-Type": "application/json",
                 },
                 params=params,

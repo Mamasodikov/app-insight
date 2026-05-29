@@ -68,11 +68,17 @@ Rules:
         contents=prompt,
     )
 
-    response_text = response.text.strip()
+    response_text = response.text or ""
+    response_text = response_text.strip()
+    if not response_text:
+        raise ValueError("AI returned empty response")
     response_text = re.sub(r'^```(?:json)?\s*\n?', '', response_text)
     response_text = re.sub(r'\n?```\s*$', '', response_text)
 
-    data = json.loads(response_text.strip())
+    try:
+        data = json.loads(response_text.strip())
+    except json.JSONDecodeError:
+        raise ValueError(f"AI returned invalid JSON: {response_text[:200]}")
     data["policy_url"] = policy_url
     data["text_length"] = len(text)
     return data

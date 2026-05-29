@@ -22,7 +22,7 @@ from backend.ai.privacy import analyze_privacy_policy
 from backend.ai.osint import full_domain_osint
 
 connected_providers: dict[str, dict] = {}
-scan_cache: dict[str, dict] = {}
+scan_cache: dict[str, dict] = {}  # bounded to 50 entries
 
 
 @asynccontextmanager
@@ -67,24 +67,26 @@ async def search_store(q: str, store: str = "playstore", count: int = Query(defa
 
 @app.get("/api/store/app/{store}/{app_id:path}")
 async def get_app_info(store: str, app_id: str, country: str = "all"):
+    if store not in ("playstore", "appstore"):
+        raise HTTPException(400, "Invalid store.")
     try:
         if store == "playstore":
             return await playstore.get_app_info(app_id, country=country)
-        elif store == "appstore":
+        else:
             return await appstore.get_app_info(app_id, country=country)
-        raise HTTPException(400, "Invalid store.")
     except Exception as e:
         raise HTTPException(404, f"App not found: {e}")
 
 
 @app.get("/api/store/reviews/{store}/{app_id:path}")
 async def get_reviews(store: str, app_id: str, count: int = Query(default=200, le=1000), country: str = "all", sort: str = "newest"):
+    if store not in ("playstore", "appstore"):
+        raise HTTPException(400, "Invalid store.")
     try:
         if store == "playstore":
             return await playstore.get_reviews(app_id, count=count, country=country, sort=sort)
-        elif store == "appstore":
+        else:
             return await appstore.get_reviews(app_id, count=count, country=country)
-        raise HTTPException(400, "Invalid store.")
     except Exception as e:
         raise HTTPException(500, f"Failed to fetch reviews: {e}")
 
@@ -167,13 +169,13 @@ async def osint_lookup(domain: str):
 
 @app.get("/api/store/aso/{store}/{app_id:path}")
 async def get_aso_score(store: str, app_id: str, country: str = "all"):
+    if store not in ("playstore", "appstore"):
+        raise HTTPException(400, "Invalid store.")
     try:
         if store == "playstore":
             info = await playstore.get_app_info(app_id, country=country)
-        elif store == "appstore":
-            info = await appstore.get_app_info(app_id, country=country)
         else:
-            raise HTTPException(400, "Invalid store.")
+            info = await appstore.get_app_info(app_id, country=country)
         return score_aso(info)
     except Exception as e:
         raise HTTPException(500, f"ASO scoring failed: {e}")
@@ -332,8 +334,23 @@ class ScanRequest(BaseModel):
 
 @app.post("/api/security/scan")
 async def security_scan(req: ScanRequest):
+    from urllib.parse import urlparse
+    import ipaddress
+    parsed = urlparse(req.target_url if "://" in req.target_url else f"https://{req.target_url}")
+    host = parsed.hostname or ""
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            raise HTTPException(400, "Cannot scan private/internal addresses.")
+    except ValueError:
+        pass  # hostname, not IP — OK
+    if not host or host in ("localhost", "0.0.0.0"):
+        raise HTTPException(400, "Invalid scan target.")
     report = await scan_target(req.target_url)
     scan_cache[report.scan_id] = report.model_dump()
+    if len(scan_cache) > 50:
+        oldest = next(iter(scan_cache))
+        del scan_cache[oldest]
     return report.model_dump()
 
 @app.get("/api/security/report/{scan_id}")

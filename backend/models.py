@@ -1,6 +1,5 @@
 from pydantic import BaseModel, field_validator
 from typing import Optional
-from datetime import datetime
 
 
 class AppInfo(BaseModel):
@@ -82,7 +81,3 @@ class RevenueOverview(BaseModel):
     currency: str = "USD"
 
 
-class ConnectRequest(BaseModel):
-    provider: str
-    api_key: str
-    extra: dict = {}

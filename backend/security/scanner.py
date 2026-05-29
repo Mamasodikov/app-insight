@@ -1,10 +1,9 @@
 import asyncio
-import hashlib
 import ssl
 import socket
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 import httpx
 from backend.models import SecurityFinding, SecurityReport
