@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AppInsight — App Intelligence Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .sidebar-item.active { background: rgba(99, 102, 241, 0.15); color: #818cf8; border-right: 3px solid #818cf8; }
+    .sidebar-item:hover { background: rgba(255,255,255,0.05); }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .severity-critical { background: #dc2626; } .severity-high { background: #ea580c; }
+    .severity-medium { background: #d97706; } .severity-low { background: #2563eb; } .severity-info { background: #6b7280; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+    .metric-card { transition: transform 0.2s, box-shadow 0.2s; }
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+    input, select { background: #1e293b !important; border: 1px solid #334155 !important; color: #e2e8f0 !important; }
+    input:focus, select:focus { border-color: #818cf8 !important; outline: none; box-shadow: 0 0 0 2px rgba(129,140,248,0.2); }
+    /* Shimmer */
+    .shimmer { position: relative; overflow: hidden; background: #1e293b; border-radius: 8px; }
+    .shimmer::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 40%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 60%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmerMove 1.5s ease-in-out infinite;
+    }
+    @keyframes shimmerMove { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .shimmer-line { height: 14px; margin-bottom: 8px; }
+    .shimmer-line-sm { height: 10px; margin-bottom: 6px; }
+    .shimmer-circle { border-radius: 12px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen" x-data="appInsight()" x-cloak>
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0">
+    <div class="p-5 border-b border-slate-800">
+      <h1 class="text-xl font-bold text-white flex items-center gap-2">
+        <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        AppInsight
+      </h1>
+      <p class="text-xs text-slate-500 mt-1">App Intelligence Platform</p>
+    </div>
+    <nav class="flex-1 py-4 space-y-1 px-2">
+      <template x-for="item in navItems" :key="item.id">
+        <button @click="currentTab = item.id"
+                :class="currentTab === item.id ? 'active' : ''"
+                class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded-l text-sm font-medium text-slate-400 transition-all">
+          <span x-html="item.icon" class="w-5 h-5"></span>
+          <span x-text="item.label" class="flex-1 text-left"></span>
+          <span x-show="item.id === 'apps' && trackedApps.length" class="text-xs bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full" x-text="trackedApps.length"></span>
+          <span x-show="item.id === 'security' && scanHistory.length" class="text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full" x-text="scanHistory.length"></span>
+          <span x-show="item.id === 'compare' && compareResults.length" class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full" x-text="compareResults.length"></span>
+        </button>
+      </template>
+    </nav>
+    <div class="p-4 border-t border-slate-800 text-xs text-slate-600">v1.0.0</div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto">
+    <header class="sticky top-0 z-10 glass px-6 py-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-white" x-text="navItems.find(i => i.id === currentTab)?.label"></h2>
+      <span class="text-xs text-slate-500" x-text="new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})"></span>
+    </header>
+
+    <div class="p-6 fade-in" :key="currentTab">
+
+      <!-- ═══ DASHBOARD ═══ -->
+      <div x-show="currentTab === 'dashboard'" x-cloak>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="metric-card glass rounded-xl p-5">
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Apps Tracked</p>
+            <p class="text-3xl font-bold text-white mt-1" x-text="trackedApps.length || '0'"></p>
+          </div>
+          <div class="metric-card glass rounded-xl p-5">
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Avg Rating</p>
+            <p class="text-3xl font-bold text-amber-400 mt-1" x-text="avgRating"></p>
+          </div>
+          <div class="metric-card glass rounded-xl p-5">
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Revenue Providers</p>
+            <p class="text-3xl font-bold text-emerald-400 mt-1" x-text="connections.length || '0'"></p>
+          </div>
+          <div class="metric-card glass rounded-xl p-5">
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Security Scans</p>
+            <p class="text-3xl font-bold text-indigo-400 mt-1" x-text="scanHistory.length || '0'"></p>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <button @click="currentTab = 'apps'" class="glass rounded-xl p-6 text-left hover:border-indigo-500/30 transition group">
+            <div class="text-indigo-400 mb-2"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></div>
+            <h3 class="font-semibold text-white group-hover:text-indigo-400 transition">Search & Analyze Apps</h3>
+            <p class="text-xs text-slate-500 mt-1">Play Store & App Store analytics + AI review insights</p>
+          </button>
+          <button @click="currentTab = 'security'" class="glass rounded-xl p-6 text-left hover:border-red-500/30 transition group">
+            <div class="text-red-400 mb-2"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg></div>
+            <h3 class="font-semibold text-white group-hover:text-red-400 transition">Security Scanner</h3>
+            <p class="text-xs text-slate-500 mt-1">Auto-pentest public endpoints for vulnerabilities</p>
+          </button>
+          <button @click="currentTab = 'revenue'" class="glass rounded-xl p-6 text-left hover:border-emerald-500/30 transition group">
+            <div class="text-emerald-400 mb-2"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <h3 class="font-semibold text-white group-hover:text-emerald-400 transition">Revenue Tracking</h3>
+            <p class="text-xs text-slate-500 mt-1">RevenueCat, Stripe, Click, Uzum in one place</p>
+          </button>
+        </div>
+        <div class="glass rounded-xl p-5" x-show="trackedApps.length > 0">
+          <h3 class="font-semibold text-white mb-4">Tracked Apps (<span x-text="trackedApps.length"></span>)</h3>
+          <div class="space-y-3">
+            <template x-for="app in trackedApps" :key="app.app_id + app.store">
+              <div class="flex items-center gap-4 p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition group">
+                <div class="flex items-center gap-4 flex-1 min-w-0 cursor-pointer" @click="viewApp(app)">
+                  <img :src="app.icon_url" class="w-10 h-10 rounded-lg flex-shrink-0" x-show="app.icon_url">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-white truncate" x-text="app.title"></p>
+                    <p class="text-xs text-slate-500" x-text="app.developer"></p>
+                  </div>
+                  <div class="text-right flex-shrink-0">
+                    <p class="text-sm font-medium text-amber-400" x-text="app.rating ? app.rating.toFixed(1) + ' ★' : 'N/A'"></p>
+                    <p class="text-xs text-slate-500 capitalize" x-text="app.store"></p>
+                  </div>
+                </div>
+                <button @click.stop="toggleTrack(app)" class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition p-1 flex-shrink-0" title="Untrack">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+        <!-- Empty state -->
+        <div x-show="trackedApps.length === 0" class="glass rounded-xl p-12 text-center">
+          <svg class="w-16 h-16 mx-auto text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <h3 class="text-white font-semibold mb-2">No Apps Tracked Yet</h3>
+          <p class="text-slate-500 text-sm mb-4">Search for apps and click Track to start monitoring</p>
+          <button @click="currentTab = 'apps'" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg text-sm transition">Search Apps</button>
+        </div>
+      </div>
+
+      <!-- ═══ APP ANALYTICS ═══ -->
+      <div x-show="currentTab === 'apps'" x-cloak>
+        <!-- Search -->
+        <div class="glass rounded-xl p-5 mb-6">
+          <div class="flex gap-3">
+            <select x-model="searchStore" class="rounded-lg px-3 py-2 text-sm w-36">
+              <option value="playstore">Play Store</option>
+              <option value="appstore">App Store</option>
+            </select>
+            <select x-model="searchCountry" class="rounded-lg px-3 py-2 text-sm w-32">
+              <option value="all">All Countries</option>
+              <option value="uz">Uzbekistan</option>
+              <option value="us">USA</option>
+              <option value="gb">UK</option>
+              <option value="ru">Russia</option>
+              <option value="tr">Turkey</option>
+              <option value="in">India</option>
+              <option value="de">Germany</option>
+              <option value="kz">Kazakhstan</option>
+            </select>
+            <input type="text" x-model="searchQuery" @keydown.enter="searchApps()"
+                   placeholder="Search by app name..." class="flex-1 rounded-lg px-4 py-2 text-sm">
+            <button @click="searchApps()" :disabled="searching"
+                    class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-medium transition">
+              <span x-show="!searching">Search</span>
+              <span x-show="searching" class="flex items-center gap-2">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Searching...
+              </span>
+            </button>
+          </div>
+          <div class="flex gap-3 mt-3">
+            <input type="text" x-model="directAppId"
+                   :placeholder="searchStore === 'playstore' ? 'com.example.app' : 'App ID or Bundle ID'"
+                   class="flex-1 rounded-lg px-4 py-2 text-sm">
+            <button @click="lookupApp()" :disabled="lookingUp"
+                    class="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-medium transition">
+              <span x-show="!lookingUp">Lookup</span>
+              <span x-show="lookingUp" class="flex items-center gap-2">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Loading...
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Search Shimmer -->
+        <div x-show="searching" class="glass rounded-xl p-5 mb-6">
+          <div class="shimmer shimmer-line w-32 mb-4"></div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <template x-for="i in 6" :key="'ss'+i">
+              <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50">
+                <div class="shimmer shimmer-circle w-12 h-12 flex-shrink-0"></div>
+                <div class="flex-1">
+                  <div class="shimmer shimmer-line w-3/4"></div>
+                  <div class="shimmer shimmer-line-sm w-1/2"></div>
+                </div>
+                <div class="shimmer shimmer-line w-12 h-5"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Search Results -->
+        <div x-show="searchResults.length > 0 && !searching" class="glass rounded-xl p-5 mb-6 fade-in">
+          <h3 class="font-semibold text-white mb-4">Search Results (<span x-text="searchResults.length"></span>)</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <template x-for="app in searchResults" :key="app.app_id">
+              <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition cursor-pointer" @click="selectApp(app)">
+                <img :src="app.icon_url" class="w-12 h-12 rounded-xl flex-shrink-0" x-show="app.icon_url">
+                <div class="flex-1 min-w-0">
+                  <p class="font-medium text-white text-sm truncate flex items-center gap-1.5">
+                    <span x-text="app.title"></span>
+                    <span x-show="isTracked(app)" class="text-emerald-400 text-xs flex-shrink-0">&#10003;</span>
+                  </p>
+                  <p class="text-xs text-slate-500" x-text="app.developer"></p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                  <p class="text-sm text-amber-400" x-text="app.rating ? app.rating.toFixed(1) + ' ★' : ''"></p>
+                  <p class="text-xs text-slate-500" x-text="app.installs || ''"></p>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- App Detail Shimmer -->
+        <div x-show="lookingUp && !selectedApp" class="fade-in">
+          <div class="glass rounded-xl p-6 mb-6">
+            <div class="flex items-start gap-5">
+              <div class="shimmer shimmer-circle w-20 h-20 flex-shrink-0"></div>
+              <div class="flex-1">
+                <div class="shimmer shimmer-line w-1/2 h-6 mb-3"></div>
+                <div class="shimmer shimmer-line-sm w-1/3"></div>
+                <div class="flex gap-4 mt-4">
+                  <div class="shimmer shimmer-line w-16 h-4"></div>
+                  <div class="shimmer shimmer-line w-20 h-4"></div>
+                  <div class="shimmer shimmer-line w-24 h-4"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-5">
+            <div class="shimmer shimmer-line w-40 mb-4"></div>
+            <div class="space-y-3">
+              <template x-for="i in 4" :key="'rs'+i">
+                <div class="p-3 rounded-lg bg-slate-800/50">
+                  <div class="flex justify-between mb-2">
+                    <div class="shimmer shimmer-line-sm w-24"></div>
+                    <div class="shimmer shimmer-line-sm w-20"></div>
+                  </div>
+                  <div class="shimmer shimmer-line w-full"></div>
+                  <div class="shimmer shimmer-line w-2/3"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- App Detail -->
+        <div x-show="selectedApp && !lookingUp" class="fade-in">
+          <!-- Back button -->
+          <button @click="clearApp()" class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-400 transition mb-4">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            Back to search
+          </button>
+          <div class="glass rounded-xl p-6 mb-6">
+            <div class="flex items-start gap-5">
+              <img :src="selectedApp?.icon_url" class="w-20 h-20 rounded-2xl" x-show="selectedApp?.icon_url">
+              <div class="flex-1">
+                <h2 class="text-2xl font-bold text-white" x-text="selectedApp?.title"></h2>
+                <p class="text-slate-400 mt-1" x-text="selectedApp?.developer"></p>
+                <div class="flex flex-wrap gap-4 mt-3">
+                  <span class="text-sm"><span class="text-amber-400 font-semibold" x-text="selectedApp?.rating?.toFixed(1)"></span> ★ rating</span>
+                  <span class="text-sm text-slate-400" x-text="(selectedApp?.ratings_count || 0).toLocaleString() + ' ratings'"></span>
+                  <span class="text-sm text-slate-400" x-text="selectedApp?.installs ? Number(selectedApp.installs).toLocaleString() + ' installs' : ''"></span>
+                  <span class="text-sm text-slate-400" x-text="selectedApp?.category || ''"></span>
+                  <span class="text-sm text-slate-400" x-text="selectedApp?.version ? 'v' + selectedApp.version : ''"></span>
+                </div>
+              </div>
+              <div class="flex gap-2 flex-shrink-0 flex-wrap justify-end">
+                <button @click="toggleTrack(selectedApp)"
+                  :class="isTracked(selectedApp) ? 'bg-emerald-600/20 text-emerald-400 hover:bg-red-600/20 hover:text-red-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
+                  class="px-4 py-2 rounded-lg text-sm transition group">
+                  <span x-show="!isTracked(selectedApp)">Track</span>
+                  <span x-show="isTracked(selectedApp)" class="group-hover:hidden">Tracked</span>
+                  <span x-show="isTracked(selectedApp)" class="hidden group-hover:inline">Untrack</span>
+                </button>
+                <button @click="exportPDF()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm transition">Export</button>
+                <button @click="analyzeApp()" :disabled="analyzing"
+                        class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition">
+                  <span x-show="!analyzing">AI Analyze</span>
+                  <span x-show="analyzing" class="flex items-center gap-2">
+                    <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    <span x-text="analyzeStatus || 'Analyzing...'"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Live Progress (terminal style) -->
+          <div x-show="analyzing || analyzeSteps.length" class="glass rounded-xl p-5 mb-6 fade-in">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-3">
+                <svg x-show="analyzing" class="animate-spin h-5 w-5 text-indigo-400 flex-shrink-0" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                <span x-show="!analyzing && analysisResult" class="text-emerald-400 flex-shrink-0">&#10003;</span>
+                <h3 class="font-semibold text-white" x-text="analyzing ? 'AI Analysis in Progress' : 'AI Analysis Complete'"></h3>
+              </div>
+              <div class="flex gap-2">
+                <button x-show="analyzing" @click="stopAnalysis()"
+                  class="text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 px-3 py-1 rounded-lg transition">Stop</button>
+                <button x-show="!analyzing && analyzeSteps.length" @click="analyzeSteps = []; analysisResult = null; delete analysisCache[selectedApp?.app_id]"
+                  class="text-xs bg-slate-700 text-slate-400 hover:text-white px-3 py-1 rounded-lg transition">Clear</button>
+              </div>
+            </div>
+            <div class="space-y-1.5 font-mono text-sm max-h-48 overflow-y-auto">
+              <template x-for="(step, idx) in analyzeSteps" :key="idx">
+                <div class="flex items-start gap-2 fade-in" :class="analyzing && idx === analyzeSteps.length - 1 ? 'text-indigo-300' : 'text-slate-500'">
+                  <span class="flex-shrink-0 mt-0.5" x-text="stepIcon(step.icon)"></span>
+                  <span x-text="step.msg"></span>
+                </div>
+              </template>
+              <div x-show="analyzing" class="flex items-center gap-2 text-slate-600">
+                <span class="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Analysis Results -->
+          <div x-show="analysisResult && !analyzing" class="fade-in space-y-4 mb-6">
+            <div class="glass rounded-xl p-5">
+              <h3 class="font-semibold text-white mb-3">Summary</h3>
+              <p class="text-slate-300" x-text="analysisResult?.analysis?.summary"></p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="glass rounded-xl p-5">
+                <h4 class="text-sm font-medium text-emerald-400 mb-2">Positive</h4>
+                <p class="text-3xl font-bold text-white" x-text="(analysisResult?.analysis?.sentiment?.positive || 0) + '%'"></p>
+              </div>
+              <div class="glass rounded-xl p-5">
+                <h4 class="text-sm font-medium text-slate-400 mb-2">Neutral</h4>
+                <p class="text-3xl font-bold text-white" x-text="(analysisResult?.analysis?.sentiment?.neutral || 0) + '%'"></p>
+              </div>
+              <div class="glass rounded-xl p-5">
+                <h4 class="text-sm font-medium text-red-400 mb-2">Negative</h4>
+                <p class="text-3xl font-bold text-white" x-text="(analysisResult?.analysis?.sentiment?.negative || 0) + '%'"></p>
+              </div>
+            </div>
+            <div class="glass rounded-xl p-5" x-show="analysisResult?.analysis?.top_topics?.length">
+              <h4 class="font-semibold text-white mb-3">Top Topics</h4>
+              <div class="space-y-2">
+                <template x-for="topic in analysisResult?.analysis?.top_topics || []" :key="topic.topic">
+                  <div class="flex items-center gap-3">
+                    <span class="w-2 h-2 rounded-full" :class="topic.sentiment === 'positive' ? 'bg-emerald-400' : topic.sentiment === 'negative' ? 'bg-red-400' : 'bg-amber-400'"></span>
+                    <span class="text-sm text-white flex-1" x-text="topic.topic"></span>
+                    <span class="text-xs text-slate-500" x-text="topic.count + ' mentions'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="glass rounded-xl p-5">
+                <h4 class="font-semibold text-indigo-400 mb-3">Feature Requests</h4>
+                <ul class="space-y-1">
+                  <template x-for="req in analysisResult?.analysis?.feature_requests || []" :key="req">
+                    <li class="text-sm text-slate-300 flex items-start gap-2"><span class="text-indigo-400 mt-0.5">+</span><span x-text="req"></span></li>
+                  </template>
+                </ul>
+              </div>
+              <div class="glass rounded-xl p-5">
+                <h4 class="font-semibold text-red-400 mb-3">Bug Reports</h4>
+                <ul class="space-y-1">
+                  <template x-for="bug in analysisResult?.analysis?.bug_reports || []" :key="bug">
+                    <li class="text-sm text-slate-300 flex items-start gap-2"><span class="text-red-400 mt-0.5">!</span><span x-text="bug"></span></li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+            <div class="glass rounded-xl p-5">
+              <h4 class="font-semibold text-amber-400 mb-3">Recommendations</h4>
+              <ol class="space-y-2">
+                <template x-for="(rec, i) in analysisResult?.analysis?.recommendations || []" :key="i">
+                  <li class="text-sm text-slate-300 flex items-start gap-2"><span class="text-amber-400 font-medium" x-text="(i+1) + '.'"></span><span x-text="rec"></span></li>
+                </template>
+              </ol>
+            </div>
+          </div>
+
+          <!-- ASO Score -->
+          <div x-show="asoScore" class="glass rounded-xl p-5 mb-6 fade-in">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-white">ASO Score</h3>
+              <div class="flex items-center gap-3">
+                <span class="text-3xl font-bold" :class="{'text-emerald-400': asoScore?.score >= 70, 'text-amber-400': asoScore?.score >= 50, 'text-red-400': asoScore?.score < 50}" x-text="asoScore?.grade"></span>
+                <span class="text-lg text-slate-400" x-text="asoScore?.score + '/100'"></span>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <template x-for="[key, val] in Object.entries(asoScore?.breakdown || {})" :key="key">
+                <div class="p-2 rounded-lg bg-slate-800/50 text-center">
+                  <p class="text-xs text-slate-500 capitalize" x-text="key.replace('_', ' ')"></p>
+                  <p class="text-lg font-bold text-white" x-text="val"></p>
+                </div>
+              </template>
+            </div>
+            <div x-show="asoScore?.tips?.length" class="space-y-1">
+              <template x-for="(tip, i) in asoScore?.tips || []" :key="i">
+                <p class="text-sm text-amber-300/80 flex items-start gap-2"><span class="text-amber-400 mt-0.5 flex-shrink-0">!</span><span x-text="tip"></span></p>
+              </template>
+            </div>
+          </div>
+
+          <!-- Permissions & Rating Chart -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" x-show="(permissionsData || selectedApp?.ratings_count) && !loadingReviews">
+            <!-- Permissions -->
+            <div class="glass rounded-xl p-5 fade-in" x-show="permissionsData">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-white">Permissions</h3>
+                <span class="text-xs px-2 py-1 rounded-full font-bold"
+                  :class="{'bg-red-500/20 text-red-400': permissionsData?.risk_level === 'high', 'bg-amber-500/20 text-amber-400': permissionsData?.risk_level === 'medium', 'bg-emerald-500/20 text-emerald-400': permissionsData?.risk_level === 'low'}"
+                  x-text="(permissionsData?.risk_level || '').toUpperCase() + ' RISK'"></span>
+              </div>
+              <p class="text-sm text-slate-400 mb-3" x-text="(permissionsData?.total_permissions || 0) + ' permissions requested'"></p>
+              <!-- Flags -->
+              <div x-show="permissionsData?.flags?.length" class="space-y-2 mb-3">
+                <template x-for="flag in permissionsData?.flags || []" :key="flag.category">
+                  <div class="p-2 rounded-lg" :class="flag.level === 'high' ? 'bg-red-500/10' : 'bg-amber-500/10'">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="w-1.5 h-1.5 rounded-full" :class="flag.level === 'high' ? 'bg-red-400' : 'bg-amber-400'"></span>
+                      <span class="text-xs font-semibold" :class="flag.level === 'high' ? 'text-red-400' : 'text-amber-400'" x-text="flag.category"></span>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="p in flag.permissions" :key="p">
+                        <span class="text-xs text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded" x-text="p"></span>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+              <!-- All categories collapsed -->
+              <details class="text-xs">
+                <summary class="text-slate-500 cursor-pointer hover:text-slate-400">All permission categories</summary>
+                <div class="mt-2 space-y-1">
+                  <template x-for="[cat, perms] in Object.entries(permissionsData?.categories || {})" :key="cat">
+                    <div class="flex items-center gap-2">
+                      <span class="text-slate-500 w-28 flex-shrink-0 truncate" x-text="cat"></span>
+                      <span class="text-slate-600" x-text="perms.length"></span>
+                    </div>
+                  </template>
+                </div>
+              </details>
+            </div>
+
+            <!-- Rating Distribution Chart -->
+            <div class="glass rounded-xl p-5 fade-in" x-show="ratingBars.length">
+              <h3 class="font-semibold text-white mb-3">Rating Distribution</h3>
+              <div class="space-y-2">
+                <template x-for="bar in ratingBars" :key="bar.star">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-amber-400 w-8" x-text="bar.star + ' ★'"></span>
+                    <div class="flex-1 bg-slate-800 rounded-full h-4 overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-700" :class="bar.star >= 4 ? 'bg-emerald-500' : bar.star === 3 ? 'bg-amber-500' : 'bg-red-500'" :style="'width:' + bar.pct + '%'"></div>
+                    </div>
+                    <span class="text-xs text-slate-500 w-10 text-right" x-text="bar.pct + '%'"></span>
+                  </div>
+                </template>
+              </div>
+              <p class="text-xs text-slate-500 mt-3" x-text="'Based on ' + appReviews.length + ' fetched reviews'"></p>
+            </div>
+          </div>
+
+          <!-- Privacy & OSINT buttons -->
+          <div class="flex flex-wrap gap-3 mb-6" x-show="selectedApp && !loadingReviews">
+            <button x-show="!loadingPrivacy" @click="privacyData ? (privacyData = null, privacyCache[selectedApp.app_id] = null) : loadPrivacy()"
+              :class="privacyData ? 'bg-emerald-600/20 text-emerald-400 hover:bg-red-600/10 hover:text-red-400' : 'text-slate-400 hover:text-indigo-400 hover:border-indigo-500/30'"
+              class="glass px-4 py-2.5 rounded-lg text-sm transition flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              <span x-text="privacyData ? 'Privacy ✓ (click to reset)' : 'Analyze Privacy Policy'"></span>
+            </button>
+            <button x-show="loadingPrivacy" disabled class="glass text-indigo-400 px-4 py-2.5 rounded-lg text-sm flex items-center gap-2">
+              <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Analyzing policy...
+            </button>
+            <button x-show="!loadingWhois" @click="osintData ? (osintData = null, osintCache[selectedApp.app_id] = null) : loadWhois()"
+              :class="osintData ? 'bg-emerald-600/20 text-emerald-400 hover:bg-red-600/10 hover:text-red-400' : 'text-slate-400 hover:text-indigo-400 hover:border-indigo-500/30'"
+              class="glass px-4 py-2.5 rounded-lg text-sm transition flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
+              <span x-text="osintData ? 'WHOIS ✓ (click to reset)' : 'WHOIS & Domain Intel'"></span>
+            </button>
+            <button x-show="loadingWhois" disabled class="glass text-indigo-400 px-4 py-2.5 rounded-lg text-sm flex items-center gap-2">
+              <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Looking up domain...
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" x-show="(privacyData || osintData) && !loadingReviews">
+            <!-- Privacy Policy -->
+            <div class="glass rounded-xl p-5 fade-in" x-show="privacyData">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-white">Privacy Policy</h3>
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl font-bold" :class="{'text-emerald-400': privacyData?.score >= 70, 'text-amber-400': privacyData?.score >= 40, 'text-red-400': privacyData?.score < 40}" x-text="privacyData?.grade"></span>
+                  <span class="text-sm text-slate-400" x-text="privacyData?.score + '/100'"></span>
+                </div>
+              </div>
+              <p class="text-sm text-slate-300 mb-3" x-text="privacyData?.summary"></p>
+              <!-- Red flags -->
+              <div x-show="privacyData?.red_flags?.length" class="mb-3">
+                <h4 class="text-xs text-red-400 font-semibold mb-1">Red Flags</h4>
+                <template x-for="flag in privacyData?.red_flags || []" :key="flag">
+                  <p class="text-xs text-red-300/80 flex items-start gap-1.5 mb-0.5"><span class="text-red-400 mt-px">!</span><span x-text="flag"></span></p>
+                </template>
+              </div>
+              <!-- Data collected -->
+              <div x-show="privacyData?.data_collected?.length" class="mb-3">
+                <h4 class="text-xs text-slate-500 font-semibold mb-1">Data Collected</h4>
+                <div class="flex flex-wrap gap-1">
+                  <template x-for="d in privacyData?.data_collected || []" :key="d">
+                    <span class="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded" x-text="d"></span>
+                  </template>
+                </div>
+              </div>
+              <!-- Third parties -->
+              <div x-show="privacyData?.data_shared_with?.length" class="mb-3">
+                <h4 class="text-xs text-slate-500 font-semibold mb-1">Shared With</h4>
+                <div class="flex flex-wrap gap-1">
+                  <template x-for="tp in privacyData?.data_shared_with || []" :key="tp">
+                    <span class="text-xs bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded" x-text="tp"></span>
+                  </template>
+                </div>
+              </div>
+              <!-- Compliance badges -->
+              <div class="flex gap-2 mt-2">
+                <span x-show="privacyData?.gdpr_compliant === true" class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">GDPR</span>
+                <span x-show="privacyData?.data_deletion_available === true" class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">Data Deletion</span>
+                <span x-show="privacyData?.gdpr_compliant === false" class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">No GDPR</span>
+              </div>
+              <a :href="privacyData?.policy_url" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 mt-2 inline-block">View full policy</a>
+            </div>
+
+            <!-- OSINT / Domain Intel -->
+            <div class="glass rounded-xl p-5 fade-in" x-show="osintData">
+              <h3 class="font-semibold text-white mb-3">Domain Intelligence</h3>
+              <!-- WHOIS -->
+              <div x-show="osintData?.whois && !osintData?.whois?.error" class="mb-3">
+                <h4 class="text-xs text-slate-500 font-semibold mb-2">WHOIS</h4>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <template x-for="[k,v] in [['Domain', osintData?.whois?.domain], ['Registrar', osintData?.whois?.registrar], ['Created', osintData?.whois?.creation_date?.split(' ')[0]], ['Expires', osintData?.whois?.expiration_date?.split(' ')[0]], ['Age', osintData?.whois?.domain_age_years ? osintData.whois.domain_age_years + ' years' : null], ['Org', osintData?.whois?.org], ['Country', osintData?.whois?.country], ['City', osintData?.whois?.city], ['DNSSEC', osintData?.whois?.dnssec]]" :key="k">
+                    <template x-if="v">
+                      <div class="contents">
+                        <span class="text-slate-500" x-text="k"></span>
+                        <span class="text-white truncate" x-text="v"></span>
+                      </div>
+                    </template>
+                  </template>
+                </div>
+                <div x-show="osintData?.whois?.emails?.length" class="mt-1">
+                  <span class="text-xs text-slate-500">Emails: </span>
+                  <span class="text-xs text-indigo-400" x-text="(osintData?.whois?.emails || []).join(', ')"></span>
+                </div>
+              </div>
+              <!-- DNS Insights -->
+              <div x-show="osintData?.dns?.insights?.length" class="mb-3">
+                <h4 class="text-xs text-slate-500 font-semibold mb-1">Infrastructure</h4>
+                <div class="space-y-0.5">
+                  <template x-for="ins in osintData?.dns?.insights || []" :key="ins">
+                    <p class="text-xs text-slate-300" x-text="ins"></p>
+                  </template>
+                </div>
+              </div>
+              <!-- SSL -->
+              <div x-show="osintData?.ssl && !osintData?.ssl?.error" class="mb-3">
+                <h4 class="text-xs text-slate-500 font-semibold mb-1">SSL Certificate</h4>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+                  <span class="text-slate-500">Issuer</span><span class="text-white" x-text="osintData?.ssl?.issuer"></span>
+                  <span class="text-slate-500">Protocol</span><span class="text-white" x-text="osintData?.ssl?.protocol"></span>
+                  <span x-show="osintData?.ssl?.org" class="text-slate-500">Org</span><span x-show="osintData?.ssl?.org" class="text-white" x-text="osintData?.ssl?.org"></span>
+                  <span class="text-slate-500">Alt names</span><span class="text-white" x-text="osintData?.ssl?.alt_names_count"></span>
+                </div>
+              </div>
+              <!-- Tech stack -->
+              <div x-show="osintData?.technologies?.length" class="mb-3">
+                <h4 class="text-xs text-slate-500 font-semibold mb-1">Tech Stack</h4>
+                <div class="flex flex-wrap gap-1">
+                  <template x-for="t in osintData?.technologies || []" :key="t">
+                    <span class="text-xs bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded" x-text="t"></span>
+                  </template>
+                </div>
+              </div>
+              <!-- Subdomains -->
+              <div x-show="osintData?.subdomain_count > 0">
+                <h4 class="text-xs text-slate-500 font-semibold mb-1">Subdomains (<span x-text="osintData?.subdomain_count"></span>)</h4>
+                <template x-for="[cat, subs] in Object.entries(osintData?.subdomain_categories || {})" :key="cat">
+                  <div class="mb-1">
+                    <span class="text-xs font-medium capitalize" :class="{'text-red-400': cat === 'admin' || cat === 'staging', 'text-indigo-400': cat === 'api', 'text-slate-400': cat === 'other' || cat === 'mail'}" x-text="cat + ' (' + subs.length + ')'"></span>
+                    <div class="flex flex-wrap gap-1 mt-0.5">
+                      <template x-for="s in subs.slice(0, 6)" :key="s">
+                        <span class="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono" x-text="s"></span>
+                      </template>
+                      <span x-show="subs.length > 6" class="text-xs text-slate-600" x-text="'+' + (subs.length - 6)"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Privacy/OSINT loading shimmer -->
+          <div x-show="loadingPrivacy || loadingWhois" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="glass rounded-xl p-5">
+              <div class="shimmer shimmer-line w-32 mb-3"></div>
+              <div class="shimmer shimmer-line w-full mb-2"></div>
+              <div class="shimmer shimmer-line w-3/4 mb-2"></div>
+              <div class="shimmer shimmer-line w-1/2"></div>
+            </div>
+            <div class="glass rounded-xl p-5">
+              <div class="shimmer shimmer-line w-36 mb-3"></div>
+              <div class="space-y-2">
+                <template x-for="i in 4" :key="'oi'+i"><div class="shimmer shimmer-line w-full"></div></template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reviews Shimmer -->
+          <div x-show="loadingReviews" class="glass rounded-xl p-5 mb-6">
+            <div class="shimmer shimmer-line w-36 mb-4"></div>
+            <div class="space-y-3">
+              <template x-for="i in 5" :key="'rv'+i">
+                <div class="p-3 rounded-lg bg-slate-800/50">
+                  <div class="flex justify-between mb-2">
+                    <div class="shimmer shimmer-line-sm w-28"></div>
+                    <div class="shimmer shimmer-line-sm w-24"></div>
+                  </div>
+                  <div class="shimmer shimmer-line w-full"></div>
+                  <div class="shimmer shimmer-line w-4/5"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- No reviews -->
+          <div x-show="!loadingReviews && appReviews.length === 0 && selectedApp" class="glass rounded-xl p-6 mb-6 text-center">
+            <p class="text-slate-500 text-sm">No reviews found for this country. Try a different region.</p>
+          </div>
+
+          <!-- Reviews -->
+          <div class="glass rounded-xl p-5 mb-6" x-show="appReviews.length > 0 && !loadingReviews">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-white">Recent Reviews (<span x-text="appReviews.length"></span>)</h3>
+              <button @click="loadReviews()" :disabled="loadingReviews" class="text-sm text-indigo-400 hover:text-indigo-300">Refresh</button>
+            </div>
+            <div class="space-y-3 max-h-96 overflow-y-auto">
+              <template x-for="(review, idx) in appReviews.slice(0, 50)" :key="idx">
+                <div class="p-3 rounded-lg bg-slate-800/50">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-sm font-medium text-white" x-text="review.username"></span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-amber-400 text-sm" x-text="'★'.repeat(review.rating) + '☆'.repeat(5-review.rating)"></span>
+                      <span class="text-xs text-slate-500" x-text="review.date ? new Date(review.date).toLocaleDateString() : ''"></span>
+                    </div>
+                  </div>
+                  <p class="text-sm text-slate-300" x-text="review.text"></p>
+                  <div x-show="review.reply" class="mt-2 pl-3 border-l-2 border-indigo-500/30">
+                    <p class="text-xs text-slate-500">Developer Reply:</p>
+                    <p class="text-sm text-slate-400" x-text="review.reply"></p>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Similar Apps Shimmer -->
+          <div x-show="loadingReviews" class="glass rounded-xl p-5 mb-6">
+            <div class="shimmer shimmer-line w-28 mb-4"></div>
+            <div class="flex gap-3">
+              <template x-for="i in 5" :key="'sim'+i"><div class="shimmer w-32 h-24 rounded-lg flex-shrink-0"></div></template>
+            </div>
+          </div>
+
+          <!-- Similar Apps -->
+          <div x-show="similarApps.length > 0 && !loadingReviews" class="glass rounded-xl p-5 mb-6 fade-in">
+            <h3 class="font-semibold text-white mb-4">Similar Apps</h3>
+            <div class="flex gap-3 overflow-x-auto pb-2">
+              <template x-for="sa in similarApps" :key="sa.app_id">
+                <div class="flex-shrink-0 w-32 p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition cursor-pointer text-center" @click="selectApp(sa)">
+                  <img :src="sa.icon_url" class="w-12 h-12 rounded-xl mx-auto mb-2" x-show="sa.icon_url">
+                  <p class="text-xs text-white truncate" x-text="sa.title"></p>
+                  <p class="text-xs text-amber-400 mt-1" x-text="sa.rating ? sa.rating.toFixed(1) + ' ★' : ''"></p>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══ REVENUE ═══ -->
+      <div x-show="currentTab === 'revenue'" x-cloak>
+        <div class="flex justify-between items-center mb-6">
+          <h3 class="text-lg font-semibold text-white">Payment Providers</h3>
+          <button @click="loadRevenue()" :disabled="loadingRevenue"
+                  class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm transition">
+            <span x-show="!loadingRevenue">Refresh</span>
+            <span x-show="loadingRevenue" class="flex items-center gap-2">
+              <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Loading...
+            </span>
+          </button>
+        </div>
+
+        <!-- Revenue Shimmer -->
+        <div x-show="loadingRevenue" class="space-y-4">
+          <template x-for="i in 2" :key="'rl'+i">
+            <div class="glass rounded-xl p-5">
+              <div class="flex justify-between mb-4">
+                <div class="shimmer shimmer-line w-28"></div>
+                <div class="shimmer shimmer-line-sm w-20"></div>
+              </div>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <template x-for="j in 4" :key="'rm'+j">
+                  <div>
+                    <div class="shimmer shimmer-line-sm w-16 mb-2"></div>
+                    <div class="shimmer shimmer-line w-24 h-6"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div x-show="Object.keys(revenueData).length > 0 && !loadingRevenue" class="space-y-4">
+          <template x-for="(data, provider) in revenueData" :key="provider">
+            <div class="glass rounded-xl p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="font-semibold text-white capitalize" x-text="provider"></h4>
+                <span class="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400">Connected</span>
+              </div>
+              <div x-show="!data.error" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div><p class="text-xs text-slate-500">Total Revenue</p><p class="text-xl font-bold text-white" x-text="formatCurrency(data.total_revenue, data.currency)"></p></div>
+                <div x-show="data.mrr"><p class="text-xs text-slate-500">MRR</p><p class="text-xl font-bold text-emerald-400" x-text="formatCurrency(data.mrr, data.currency)"></p></div>
+                <div x-show="data.active_subscribers"><p class="text-xs text-slate-500">Active Subs</p><p class="text-xl font-bold text-indigo-400" x-text="data.active_subscribers?.toLocaleString()"></p></div>
+                <div x-show="data.trials"><p class="text-xs text-slate-500">Trials</p><p class="text-xl font-bold text-amber-400" x-text="data.trials?.toLocaleString()"></p></div>
+              </div>
+              <div x-show="data.transactions?.length" class="mt-4">
+                <h5 class="text-sm text-slate-400 mb-2">Recent Transactions</h5>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-700"><th class="pb-2">ID</th><th class="pb-2">Amount</th><th class="pb-2">Status</th><th class="pb-2">Date</th></tr></thead>
+                    <tbody>
+                      <template x-for="tx in (data.transactions || []).slice(0, 10)" :key="tx.id">
+                        <tr class="border-b border-slate-800/50">
+                          <td class="py-2 text-slate-400 font-mono text-xs" x-text="tx.id?.slice(0, 16)"></td>
+                          <td class="py-2 text-white" x-text="formatCurrency(tx.amount, tx.currency || data.currency)"></td>
+                          <td class="py-2"><span class="text-xs px-2 py-0.5 rounded-full" :class="tx.status === 'paid' || tx.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'" x-text="tx.status"></span></td>
+                          <td class="py-2 text-slate-500 text-xs" x-text="tx.date ? new Date(tx.date).toLocaleDateString() : ''"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div x-show="data.error" class="text-red-400 text-sm" x-text="data.error"></div>
+            </div>
+          </template>
+        </div>
+
+        <div x-show="Object.keys(revenueData).length === 0 && !loadingRevenue" class="glass rounded-xl p-12 text-center">
+          <svg class="w-16 h-16 mx-auto text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <h3 class="text-white font-semibold mb-2">No Payment Providers Connected</h3>
+          <p class="text-slate-500 text-sm mb-4">Connect RevenueCat, Stripe, Click, or Uzum in Settings</p>
+          <button @click="currentTab = 'settings'" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg text-sm transition">Go to Settings</button>
+        </div>
+      </div>
+
+      <!-- ═══ COMPARE ═══ -->
+      <div x-show="currentTab === 'compare'" x-cloak>
+        <div class="glass rounded-xl p-5 mb-6">
+          <h3 class="font-semibold text-white mb-2">Compare Apps</h3>
+          <p class="text-sm text-slate-400 mb-4">Select tracked apps to compare side-by-side. Track apps first from App Analytics.</p>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="app in trackedApps" :key="app.app_id">
+              <button @click="toggleCompare(app)"
+                :class="compareList.find(c => c.app_id === app.app_id) ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition hover:bg-indigo-500 hover:text-white">
+                <img :src="app.icon_url" class="w-5 h-5 rounded" x-show="app.icon_url">
+                <span x-text="app.title?.split(' ')[0]"></span>
+              </button>
+            </template>
+          </div>
+          <button @click="runCompare()" :disabled="compareList.length < 2 || comparing" x-show="compareList.length >= 1"
+                  class="mt-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm transition">
+            <span x-show="!comparing" x-text="'Compare ' + compareList.length + ' apps'"></span>
+            <span x-show="comparing" class="flex items-center gap-2">
+              <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Comparing...
+            </span>
+          </button>
+        </div>
+
+        <!-- No tracked apps -->
+        <div x-show="trackedApps.length === 0" class="glass rounded-xl p-12 text-center">
+          <h3 class="text-white font-semibold mb-2">No Apps Tracked Yet</h3>
+          <p class="text-slate-500 text-sm mb-4">Search and track apps first from App Analytics</p>
+          <button @click="currentTab = 'apps'" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg text-sm transition">Go to App Analytics</button>
+        </div>
+
+        <!-- Compare Shimmer -->
+        <div x-show="comparing" class="glass rounded-xl p-5">
+          <div class="shimmer shimmer-line w-40 mb-4 h-5"></div>
+          <div class="grid gap-3" :style="'grid-template-columns: 200px repeat(' + compareList.length + ', 1fr)'">
+            <template x-for="i in 8" :key="'cs'+i">
+              <template x-for="j in (compareList.length + 1)" :key="'csc'+j">
+                <div class="shimmer shimmer-line h-5"></div>
+              </template>
+            </template>
+          </div>
+        </div>
+
+        <!-- Compare Results -->
+        <div x-show="compareResults.length > 0 && !comparing" class="fade-in">
+          <button @click="compareResults = []" class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-400 transition mb-4">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            Back to selection
+          </button>
+          <div class="glass rounded-xl p-5 overflow-x-auto">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-white">Comparison</h3>
+            <button @click="exportComparePDF()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-xs transition">Export PDF</button>
+          </div>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-700">
+                <th class="text-left text-slate-500 pb-3 pr-4 w-40">Metric</th>
+                <template x-for="app in compareResults" :key="app.app_id">
+                  <th class="text-center pb-3 px-2 min-w-[140px]">
+                    <img :src="app.icon_url" class="w-10 h-10 rounded-xl mx-auto mb-1" x-show="app.icon_url">
+                    <p class="text-white text-xs truncate" x-text="app.title"></p>
+                  </th>
+                </template>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in compareRows" :key="row.key">
+                <tr class="border-b border-slate-800/50">
+                  <td class="py-2.5 pr-4 text-slate-400" x-text="row.label"></td>
+                  <template x-for="app in compareResults" :key="app.app_id + row.key">
+                    <td class="py-2.5 px-2 text-center" :class="row.best === app.app_id ? 'text-emerald-400 font-semibold' : 'text-white'" x-text="row.fn(app)"></td>
+                  </template>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SECURITY ═══ -->
+      <div x-show="currentTab === 'security'" x-cloak>
+        <div class="glass rounded-xl p-5 mb-6">
+          <h3 class="font-semibold text-white mb-3">Auto Security Scanner</h3>
+          <p class="text-sm text-slate-400 mb-4">Scan public endpoints for vulnerabilities, misconfigurations, and best practice violations.</p>
+          <div class="flex gap-3">
+            <input type="text" x-model="scanTarget" placeholder="https://api.yourapp.com" class="flex-1 rounded-lg px-4 py-2 text-sm" @keydown.enter="runScan()">
+            <button @click="runScan()" :disabled="scanning"
+                    class="bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-medium transition">
+              <span x-show="!scanning">Scan</span>
+              <span x-show="scanning" class="flex items-center gap-2">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Scanning...
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scan Shimmer -->
+        <div x-show="scanning" class="space-y-4">
+          <div class="glass rounded-xl p-6">
+            <div class="flex items-center gap-6">
+              <div class="shimmer w-16 h-16 rounded-xl"></div>
+              <div class="flex-1">
+                <div class="shimmer shimmer-line w-40 h-6 mb-2"></div>
+                <div class="shimmer shimmer-line-sm w-60"></div>
+              </div>
+              <div class="flex gap-3">
+                <template x-for="i in 4" :key="'sc'+i"><div class="shimmer w-8 h-8 rounded-full"></div></template>
+              </div>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-5">
+            <div class="shimmer shimmer-line w-32 mb-4"></div>
+            <div class="space-y-3">
+              <template x-for="i in 5" :key="'sf'+i">
+                <div class="p-4 rounded-lg bg-slate-800/50 border-l-4 border-slate-700">
+                  <div class="flex gap-2 mb-2">
+                    <div class="shimmer shimmer-line-sm w-16"></div>
+                    <div class="shimmer shimmer-line-sm w-20"></div>
+                  </div>
+                  <div class="shimmer shimmer-line w-2/3 mb-1"></div>
+                  <div class="shimmer shimmer-line w-full"></div>
+                  <div class="shimmer shimmer-line w-1/2 mt-2"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scan Result -->
+        <div x-show="scanResult && !scanning" class="fade-in space-y-4">
+          <button @click="scanResult = null" class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-400 transition mb-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            Back to scans
+          </button>
+          <div class="glass rounded-xl p-6">
+            <div class="flex items-center gap-6">
+              <div class="text-center">
+                <div class="text-5xl font-bold" :class="{'text-emerald-400': scanResult?.score >= 80, 'text-amber-400': scanResult?.score >= 50 && scanResult?.score < 80, 'text-red-400': scanResult?.score < 50}" x-text="scanResult?.grade"></div>
+                <p class="text-sm text-slate-500 mt-1">Grade</p>
+              </div>
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-2xl font-bold text-white" x-text="scanResult?.score + '/100'"></span>
+                  <span class="text-sm text-slate-500">Security Score</span>
+                </div>
+                <p class="text-sm text-slate-400" x-text="'Target: ' + scanResult?.target"></p>
+                <p class="text-xs text-slate-500" x-text="'Scanned: ' + new Date(scanResult?.completed_at).toLocaleString()"></p>
+              </div>
+              <div class="ml-auto flex gap-3">
+                <template x-for="[sev, count] in Object.entries(scanResult?.summary || {}).filter(([k]) => k !== 'total')" :key="sev">
+                  <div x-show="count > 0" class="text-center">
+                    <span class="inline-block w-8 h-8 rounded-full text-white text-sm font-bold leading-8" :class="'severity-' + sev" x-text="count"></span>
+                    <p class="text-xs text-slate-500 mt-1 capitalize" x-text="sev"></p>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-5">
+            <h4 class="font-semibold text-white mb-4" x-text="'Findings (' + (scanResult?.findings?.length || 0) + ')'"></h4>
+            <div class="space-y-3">
+              <template x-for="(finding, idx) in scanResult?.findings || []" :key="idx">
+                <div class="p-4 rounded-lg bg-slate-800/50 border-l-4" :class="{'border-red-500': finding.severity === 'critical', 'border-orange-500': finding.severity === 'high', 'border-amber-500': finding.severity === 'medium', 'border-blue-500': finding.severity === 'low', 'border-slate-500': finding.severity === 'info'}">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs px-2 py-0.5 rounded-full text-white uppercase font-bold" :class="'severity-' + finding.severity" x-text="finding.severity"></span>
+                    <span class="text-xs text-slate-500 capitalize" x-text="finding.category"></span>
+                  </div>
+                  <h5 class="font-medium text-white" x-text="finding.title"></h5>
+                  <p class="text-sm text-slate-400 mt-1" x-text="finding.description"></p>
+                  <div x-show="finding.evidence" class="mt-2 p-2 rounded bg-slate-900 text-xs text-slate-500 font-mono" x-text="finding.evidence"></div>
+                  <p class="text-sm text-emerald-400 mt-2" x-text="'Fix: ' + finding.recommendation"></p>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div x-show="scanHistory.length > 0 && !scanResult && !scanning" class="glass rounded-xl p-5">
+          <h3 class="font-semibold text-white mb-4">Scan History</h3>
+          <div class="space-y-2">
+            <template x-for="scan in scanHistory" :key="scan.scan_id">
+              <div class="flex items-center gap-4 p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition cursor-pointer" @click="scanResult = scan">
+                <span class="text-2xl font-bold" :class="{'text-emerald-400': scan.score >= 80, 'text-amber-400': scan.score >= 50, 'text-red-400': scan.score < 50}" x-text="scan.grade"></span>
+                <div class="flex-1"><p class="text-sm text-white" x-text="scan.target"></p><p class="text-xs text-slate-500" x-text="new Date(scan.completed_at).toLocaleString()"></p></div>
+                <span class="text-sm text-slate-400" x-text="scan.score + '/100'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ SETTINGS ═══ -->
+      <div x-show="currentTab === 'settings'" x-cloak>
+        <div class="space-y-4">
+          <template x-for="provider in [{id:'revenuecat',name:'RevenueCat',fields:[{k:'api_key',l:'API Key',p:'sk_...'},{k:'project_id',l:'Project ID',p:'proj_...'}]},{id:'stripe',name:'Stripe',fields:[{k:'api_key',l:'Secret Key',p:'sk_live_...'}]},{id:'click',name:'Click.uz',fields:[{k:'merchant_id',l:'Merchant ID',p:''},{k:'service_id',l:'Service ID',p:''},{k:'secret_key',l:'Secret Key',p:''}]},{id:'uzum',name:'Uzum',fields:[{k:'merchant_id',l:'Merchant ID',p:''},{k:'api_key',l:'API Key',p:''}]}]" :key="provider.id">
+            <div class="glass rounded-xl p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="font-semibold text-white" x-text="provider.name"></h4>
+                <span class="text-xs px-2 py-1 rounded-full" :class="connections.includes(provider.id) ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600/20 text-slate-500'" x-text="connections.includes(provider.id) ? 'Connected' : 'Not connected'"></span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <template x-for="field in provider.fields" :key="field.k">
+                  <div>
+                    <label class="text-xs text-slate-500 mb-1 block" x-text="field.l"></label>
+                    <input type="password" :placeholder="field.p" x-model="settingsForm[provider.id + '_' + field.k]" class="w-full rounded-lg px-3 py-2 text-sm">
+                  </div>
+                </template>
+              </div>
+              <div class="flex gap-2 mt-3">
+                <button @click="connectProvider(provider)" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm transition">Connect</button>
+                <button x-show="connections.includes(provider.id)" @click="disconnectProvider(provider.id)" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 px-4 py-2 rounded-lg text-sm transition">Disconnect</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div x-show="toast" x-transition class="fixed bottom-6 right-6 z-50 glass rounded-xl px-5 py-3 text-sm max-w-sm"
+     :class="toastType === 'error' ? 'border-red-500/50 text-red-300' : 'border-emerald-500/50 text-emerald-300'">
+  <span x-text="toast"></span>
+</div>
+
+<script>
+function appInsight() {
+  return {
+    currentTab: 'dashboard',
+    navItems: [
+      { id: 'dashboard', label: 'Dashboard', icon: '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>' },
+      { id: 'apps', label: 'App Analytics', icon: '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>' },
+      { id: 'revenue', label: 'Revenue', icon: '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
+      { id: 'compare', label: 'Compare', icon: '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>' },
+      { id: 'security', label: 'Security', icon: '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>' },
+      { id: 'settings', label: 'Settings', icon: '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>' },
+    ],
+    trackedApps: [], searchStore: 'playstore', searchCountry: 'all', searchQuery: '', directAppId: '',
+    searching: false, lookingUp: false, searchResults: [], selectedApp: null,
+    appReviews: [], loadingReviews: false, similarApps: [], asoScore: null, permissionsData: null,
+    privacyData: null, osintData: null, loadingPrivacy: false, loadingWhois: false,
+    privacyCache: {}, osintCache: {},
+    analyzing: false, analyzeStatus: '', analyzeSteps: [], analysisResult: null,
+    analysisCache: {},  // cache per app_id
+    compareList: [], compareResults: [], comparing: false,
+    revenueData: {}, loadingRevenue: false, connections: [],
+    scanTarget: '', scanning: false, scanResult: null, scanHistory: [],
+    settingsForm: {}, toast: '', toastType: 'success',
+
+    get avgRating() {
+      if (!this.trackedApps.length) return '0.0';
+      return (this.trackedApps.reduce((a, b) => a + (b.rating || 0), 0) / this.trackedApps.length).toFixed(1);
+    },
+
+    isTracked(app) {
+      if (!app) return false;
+      return this.trackedApps.some(a => a.app_id === app.app_id && a.store === app.store);
+    },
+
+    get ratingBars() {
+      if (!this.appReviews.length) return [];
+      const counts = {5:0, 4:0, 3:0, 2:0, 1:0};
+      this.appReviews.forEach(r => { if (counts[r.rating] !== undefined) counts[r.rating]++; });
+      const total = this.appReviews.length;
+      return [5,4,3,2,1].map(s => ({ star: s, pct: Math.round((counts[s] / total) * 100) }));
+    },
+
+    async init() {
+      try { const r = await fetch('/api/settings/connections'); const d = await r.json(); this.connections = d.connected || []; } catch {}
+      const saved = localStorage.getItem('appinsight_tracked');
+      if (saved) this.trackedApps = JSON.parse(saved);
+      const scans = localStorage.getItem('appinsight_scans');
+      if (scans) this.scanHistory = JSON.parse(scans);
+    },
+
+    saveTracked() { localStorage.setItem('appinsight_tracked', JSON.stringify(this.trackedApps)); },
+    saveScans() { localStorage.setItem('appinsight_scans', JSON.stringify(this.scanHistory.slice(0, 20))); },
+
+    showToast(msg, type = 'success') { this.toast = msg; this.toastType = type; setTimeout(() => this.toast = '', 4000); },
+
+    formatCurrency(amount, currency = 'USD') {
+      if (amount == null) return '-';
+      if (currency === 'UZS') return amount.toLocaleString() + ' UZS';
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(amount);
+    },
+
+    async searchApps() {
+      if (!this.searchQuery.trim()) return;
+      this.searching = true; this.searchResults = [];
+      try {
+        const resp = await fetch(`/api/store/search?q=${encodeURIComponent(this.searchQuery)}&store=${this.searchStore}&count=30&country=${this.searchCountry}`);
+        if (!resp.ok) throw new Error('Search failed');
+        this.searchResults = await resp.json();
+        if (!this.searchResults.length) this.showToast('No apps found.', 'error');
+      } catch (e) { this.showToast('Search failed: ' + e.message, 'error'); }
+      this.searching = false;
+    },
+
+    _resetAppState() {
+      if (this._analyzeController) { this._analyzeController.abort(); this._analyzeController = null; }
+      this.loadingPrivacy = false;
+      this.loadingWhois = false;
+      this.analyzing = false;
+      this.analyzeSteps = [];
+      this.privacyData = null;
+      this.osintData = null;
+    },
+
+    async lookupApp() {
+      if (!this.directAppId.trim()) return;
+      this._resetAppState();
+      this.lookingUp = true; this.selectedApp = null;
+      try {
+        const resp = await fetch(`/api/store/app/${this.searchStore}/${encodeURIComponent(this.directAppId)}?country=${this.searchCountry}`);
+        if (!resp.ok) { let msg = 'App not found'; try { const e = await resp.json(); msg = e.detail || msg; } catch {} throw new Error(msg); }
+        this.selectedApp = await resp.json();
+        const id = this.selectedApp.app_id;
+        this.analysisResult = this.analysisCache[id] || null;
+        this.privacyData = this.privacyCache[id] || null;
+        this.osintData = this.osintCache[id] || null;
+        this.loadReviews();
+      } catch (e) { this.showToast('Lookup failed: ' + e.message, 'error'); }
+      this.lookingUp = false;
+    },
+
+    async selectApp(app) {
+      this._resetAppState();
+      this.lookingUp = true; this.selectedApp = null;
+      try {
+        const resp = await fetch(`/api/store/app/${app.store}/${encodeURIComponent(app.app_id)}?country=${this.searchCountry}`);
+        if (!resp.ok) throw new Error('Failed to load app details');
+        this.selectedApp = await resp.json();
+        this.searchResults = [];
+        const id = this.selectedApp.app_id;
+        this.analysisResult = this.analysisCache[id] || null;
+        this.privacyData = this.privacyCache[id] || null;
+        this.osintData = this.osintCache[id] || null;
+        this.loadReviews();
+      } catch (e) { this.showToast(e.message, 'error'); }
+      this.lookingUp = false;
+    },
+
+    async loadReviews() {
+      if (!this.selectedApp) return;
+      this.loadingReviews = true; this.appReviews = []; this.similarApps = []; this.asoScore = null; this.permissionsData = null;
+      this.privacyData = this.privacyCache[this.selectedApp.app_id] || null;
+      this.osintData = this.osintCache[this.selectedApp.app_id] || null;
+      try {
+        const fetches = [
+          fetch(`/api/store/reviews/${this.selectedApp.store}/${encodeURIComponent(this.selectedApp.app_id)}?count=200&country=${this.searchCountry}`),
+          fetch(`/api/store/similar/${this.selectedApp.store}/${encodeURIComponent(this.selectedApp.app_id)}?country=${this.searchCountry}`).catch(() => null),
+          fetch(`/api/store/aso/${this.selectedApp.store}/${encodeURIComponent(this.selectedApp.app_id)}?country=${this.searchCountry}`).catch(() => null),
+        ];
+        if (this.selectedApp.store === 'playstore') {
+          fetches.push(fetch(`/api/store/permissions/${encodeURIComponent(this.selectedApp.app_id)}?country=${this.searchCountry}`).catch(() => null));
+        }
+        const [revResp, simResp, asoResp, permResp] = await Promise.all(fetches);
+        if (revResp.ok) this.appReviews = await revResp.json();
+        if (simResp?.ok) this.similarApps = await simResp.json();
+        if (asoResp?.ok) this.asoScore = await asoResp.json();
+        if (permResp?.ok) this.permissionsData = await permResp.json();
+      } catch {}
+      this.loadingReviews = false;
+    },
+
+    async loadPrivacy() {
+      if (!this.selectedApp) return;
+      const id = this.selectedApp.app_id;
+      if (this.privacyCache[id]) { this.privacyData = this.privacyCache[id]; return; }
+      this.loadingPrivacy = true;
+      try {
+        const resp = await fetch(`/api/store/privacy/${this.selectedApp.store}/${encodeURIComponent(id)}?country=${this.searchCountry}`);
+        if (this.selectedApp?.app_id !== id) return;  // user switched app
+        if (resp.ok) {
+          this.privacyData = await resp.json();
+          this.privacyCache[id] = this.privacyData;
+        } else {
+          const e = await resp.json().catch(() => ({}));
+          this.showToast(e.detail || 'No privacy policy found', 'error');
+        }
+      } catch { if (this.selectedApp?.app_id === id) this.showToast('Privacy analysis failed', 'error'); }
+      if (this.selectedApp?.app_id === id) this.loadingPrivacy = false;
+    },
+
+    async loadWhois() {
+      if (!this.selectedApp) return;
+      const id = this.selectedApp.app_id;
+      if (this.osintCache[id]) { this.osintData = this.osintCache[id]; return; }
+      this.loadingWhois = true;
+      let domain = null;
+      if (this.privacyData?.policy_url) {
+        try { domain = new URL(this.privacyData.policy_url).hostname; } catch {}
+      }
+      if (!domain) {
+        try {
+          const resp = await fetch(`/api/store/developer-domain/${encodeURIComponent(id)}?country=${this.searchCountry}`);
+          if (this.selectedApp?.app_id !== id) return;
+          if (resp.ok) {
+            const info = await resp.json();
+            if (info.developer_website) try { domain = new URL(info.developer_website).hostname; } catch {}
+            if (!domain && info.privacy_policy) try { domain = new URL(info.privacy_policy).hostname; } catch {}
+            if (!domain && info.developer_email) {
+              const parts = info.developer_email.split('@');
+              if (parts.length === 2) domain = parts[1];
+            }
+          }
+        } catch {}
+      }
+      if (!domain) {
+        const dev = this.selectedApp?.developer?.toLowerCase().replace(/[,.\s]+/g, '').replace(/[^a-z0-9]/g, '');
+        if (dev) domain = dev + '.uz';
+      }
+      if (this.selectedApp?.app_id !== id) return;
+      if (domain) {
+        try {
+          const r = await fetch(`/api/osint/${encodeURIComponent(domain)}`);
+          if (this.selectedApp?.app_id !== id) return;
+          if (r.ok) {
+            this.osintData = await r.json();
+            this.osintCache[id] = this.osintData;
+          } else this.showToast('WHOIS lookup failed', 'error');
+        } catch { if (this.selectedApp?.app_id === id) this.showToast('WHOIS lookup failed', 'error'); }
+      } else {
+        this.showToast('Could not determine developer domain', 'error');
+      }
+      if (this.selectedApp?.app_id === id) this.loadingWhois = false;
+    },
+
+    toggleTrack(app) {
+      if (!app) return;
+      const idx = this.trackedApps.findIndex(a => a.app_id === app.app_id && a.store === app.store);
+      if (idx >= 0) {
+        this.trackedApps.splice(idx, 1);
+        this.showToast('Untracked');
+      } else {
+        this.trackedApps.push({...app});
+        this.showToast('Tracked!');
+      }
+      this.saveTracked();
+    },
+
+    clearApp() {
+      this.selectedApp = null;
+      this.appReviews = [];
+      this.similarApps = [];
+      this.asoScore = null;
+      this.permissionsData = null;
+      this.privacyData = null;
+      this.osintData = null;
+      this.analysisResult = null;
+      this.analyzeSteps = [];
+      this.loadingReviews = false;
+      this.loadingPrivacy = false;
+      this.loadingWhois = false;
+      this.analyzing = false;
+    },
+
+    viewApp(app) {
+      this._resetAppState();
+      this.selectedApp = app;
+      this.currentTab = 'apps';
+      const id = app.app_id;
+      this.analysisResult = this.analysisCache[id] || null;
+      this.privacyData = this.privacyCache[id] || null;
+      this.osintData = this.osintCache[id] || null;
+      this.loadReviews();
+    },
+
+    stepIcon(icon) {
+      const icons = { search: '\u{1F50D}', check: '\u2705', download: '\u{1F4E5}', docs: '\u{1F4C4}', chart: '\u{1F4CA}', bulb: '\u{1F4A1}', brain: '\u{1F9E0}', think: '\u{1F914}', sparkle: '\u2728', flag: '\u{1F3C1}', rocket: '\u{1F680}' };
+      return icons[icon] || '\u25CF';
+    },
+
+    _analyzeController: null,
+
+    stopAnalysis() {
+      if (this._analyzeController) {
+        this._analyzeController.abort();
+        this._analyzeController = null;
+      }
+      this.analyzing = false;
+      this.analyzeSteps.push({ icon: 'flag', msg: 'Stopped by user' });
+    },
+
+    async analyzeApp() {
+      if (!this.selectedApp) return;
+      this.analyzing = true; this.analysisResult = null; this.analyzeSteps = [];
+      this._analyzeController = new AbortController();
+      const timeout = setTimeout(() => this._analyzeController?.abort(), 120000);
+      try {
+        const resp = await fetch('/api/ai/analyze', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: this.selectedApp.app_id, store: this.selectedApp.store, count: 100, country: this.searchCountry }),
+          signal: this._analyzeController.signal,
+        });
+        clearTimeout(timeout);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === 'step') {
+                this.analyzeSteps.push(evt);
+              } else if (evt.type === 'error') {
+                this.showToast(evt.msg, 'error');
+              } else if (evt.type === 'result') {
+                this.analysisResult = evt.data;
+                if (this.selectedApp) this.analysisCache[this.selectedApp.app_id] = evt.data;
+                this.showToast('Analysis complete!');
+              }
+            } catch {}
+          }
+        }
+      } catch (e) {
+        clearTimeout(timeout);
+        if (e.name !== 'AbortError') this.showToast(e.message, 'error');
+      }
+      this.analyzing = false;
+      this._analyzeController = null;
+    },
+
+    async loadRevenue() {
+      this.loadingRevenue = true;
+      try { const r = await fetch('/api/revenue/overview'); const d = await r.json(); this.revenueData = d.message ? {} : d; } catch {}
+      this.loadingRevenue = false;
+    },
+
+    async runScan() {
+      if (!this.scanTarget.trim()) return;
+      this.scanning = true; this.scanResult = null;
+      try {
+        const resp = await fetch('/api/security/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_url: this.scanTarget }) });
+        this.scanResult = await resp.json();
+        this.scanHistory.unshift(this.scanResult);
+        this.saveScans();
+        this.showToast(`Scan complete! Score: ${this.scanResult.score}/100`);
+      } catch (e) { this.showToast('Scan failed: ' + e.message, 'error'); }
+      this.scanning = false;
+    },
+
+    async connectProvider(provider) {
+      const creds = {};
+      for (const f of provider.fields) { const v = this.settingsForm[provider.id + '_' + f.k]; if (!v) { this.showToast(`Fill in ${f.l}`, 'error'); return; } creds[f.k] = v; }
+      try {
+        const r = await fetch('/api/settings/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: provider.id, credentials: creds }) });
+        if (r.ok) { this.connections.push(provider.id); this.showToast(`${provider.name} connected!`); }
+      } catch { this.showToast('Connection failed', 'error'); }
+    },
+
+    async disconnectProvider(id) {
+      try { await fetch(`/api/settings/disconnect/${id}`, { method: 'DELETE' }); this.connections = this.connections.filter(c => c !== id); delete this.revenueData[id]; this.showToast('Disconnected'); } catch {}
+    },
+
+    // ─── Compare ──────────────────────────────
+    toggleCompare(app) {
+      const idx = this.compareList.findIndex(c => c.app_id === app.app_id);
+      if (idx >= 0) this.compareList.splice(idx, 1);
+      else if (this.compareList.length < 5) this.compareList.push(app);
+      else this.showToast('Max 5 apps', 'error');
+    },
+
+    get compareRows() {
+      if (!this.compareResults.length) return [];
+      const best = (key, higher = true) => {
+        let b = null, bv = higher ? -Infinity : Infinity;
+        for (const a of this.compareResults) {
+          const v = typeof key === 'function' ? key(a) : (a[key] || 0);
+          if ((higher && v > bv) || (!higher && v < bv)) { bv = v; b = a.app_id; }
+        }
+        return b;
+      };
+      const fmt = (v) => v == null ? '-' : typeof v === 'number' ? v.toLocaleString() : v;
+      return [
+        { key: 'rating', label: 'Rating', fn: a => a.rating?.toFixed(1) || '-', best: best('rating') },
+        { key: 'ratings_count', label: 'Total Ratings', fn: a => fmt(a.ratings_count), best: best('ratings_count') },
+        { key: 'installs', label: 'Installs', fn: a => a.installs ? Number(a.installs).toLocaleString() : '-', best: best(a => Number(a.installs || 0)) },
+        { key: 'category', label: 'Category', fn: a => a.category || '-', best: null },
+        { key: 'version', label: 'Version', fn: a => a.version || '-', best: null },
+        { key: 'price', label: 'Price', fn: a => a.price ? '$' + a.price : 'Free', best: null },
+        { key: 'aso_score', label: 'ASO Score', fn: a => a.aso ? a.aso.score + '/100 (' + a.aso.grade + ')' : '-', best: best(a => a.aso?.score || 0) },
+        { key: 'content_rating', label: 'Content Rating', fn: a => a.content_rating || '-', best: null },
+      ];
+    },
+
+    async runCompare() {
+      if (this.compareList.length < 2) { this.showToast('Select at least 2 apps', 'error'); return; }
+      this.comparing = true; this.compareResults = [];
+      try {
+        const resp = await fetch('/api/store/compare', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apps: this.compareList.map(a => ({ app_id: a.app_id, store: a.store, country: this.searchCountry })) }),
+        });
+        if (resp.ok) this.compareResults = await resp.json();
+      } catch (e) { this.showToast('Compare failed', 'error'); }
+      this.comparing = false;
+    },
+
+    // ─── PDF Export ──────────────────────────────
+    exportPDF() {
+      if (!this.selectedApp) return;
+      const app = this.selectedApp;
+      const aso = this.asoScore;
+      const analysis = this.analysisResult?.analysis;
+      let html = `<html><head><title>${app.title} - AppInsight Report</title><style>
+        body{font-family:system-ui;max-width:800px;margin:40px auto;padding:0 20px;color:#1e293b}
+        h1{font-size:24px;border-bottom:2px solid #818cf8;padding-bottom:8px}
+        h2{font-size:18px;color:#4f46e5;margin-top:24px}
+        .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0}
+        .card{background:#f1f5f9;border-radius:8px;padding:12px;text-align:center}
+        .card .val{font-size:24px;font-weight:bold}
+        .card .lbl{font-size:11px;color:#64748b;text-transform:uppercase}
+        table{width:100%;border-collapse:collapse;margin:12px 0}
+        td,th{border:1px solid #e2e8f0;padding:8px;text-align:left;font-size:13px}
+        th{background:#f8fafc;font-weight:600}
+        .tag{display:inline-block;background:#e0e7ff;color:#4338ca;padding:2px 8px;border-radius:4px;font-size:12px;margin:2px}
+        .warn{color:#d97706;font-size:13px}
+        @media print{body{margin:0}}
+      </style></head><body>`;
+      html += `<h1>${app.title}</h1><p>${app.developer} | ${app.category || ''} | ${app.store}</p>`;
+      html += `<div class="grid">
+        <div class="card"><div class="val">${app.rating?.toFixed(1) || 'N/A'}</div><div class="lbl">Rating</div></div>
+        <div class="card"><div class="val">${(app.ratings_count||0).toLocaleString()}</div><div class="lbl">Ratings</div></div>
+        <div class="card"><div class="val">${app.installs ? Number(app.installs).toLocaleString() : 'N/A'}</div><div class="lbl">Installs</div></div>
+      </div>`;
+      if (aso) {
+        html += `<h2>ASO Score: ${aso.score}/100 (${aso.grade})</h2>`;
+        html += `<table><tr>${Object.keys(aso.breakdown).map(k => `<th>${k.replace('_',' ')}</th>`).join('')}</tr>`;
+        html += `<tr>${Object.values(aso.breakdown).map(v => `<td style="text-align:center">${v}</td>`).join('')}</tr></table>`;
+        if (aso.tips.length) html += aso.tips.map(t => `<p class="warn">! ${t}</p>`).join('');
+      }
+      if (analysis) {
+        html += `<h2>AI Review Analysis (${analysis.total_reviews} reviews)</h2><p>${analysis.summary}</p>`;
+        html += `<div class="grid">
+          <div class="card"><div class="val" style="color:#16a34a">${analysis.sentiment.positive}%</div><div class="lbl">Positive</div></div>
+          <div class="card"><div class="val">${analysis.sentiment.neutral}%</div><div class="lbl">Neutral</div></div>
+          <div class="card"><div class="val" style="color:#dc2626">${analysis.sentiment.negative}%</div><div class="lbl">Negative</div></div>
+        </div>`;
+        if (analysis.top_topics?.length) {
+          html += `<h2>Top Topics</h2><table><tr><th>Topic</th><th>Mentions</th><th>Sentiment</th></tr>`;
+          analysis.top_topics.forEach(t => html += `<tr><td>${t.topic}</td><td>${t.count}</td><td>${t.sentiment}</td></tr>`);
+          html += `</table>`;
+        }
+        if (analysis.feature_requests?.length) html += `<h2>Feature Requests</h2><ul>${analysis.feature_requests.map(f => `<li>${f}</li>`).join('')}</ul>`;
+        if (analysis.bug_reports?.length) html += `<h2>Bug Reports</h2><ul>${analysis.bug_reports.map(b => `<li>${b}</li>`).join('')}</ul>`;
+        if (analysis.recommendations?.length) html += `<h2>Recommendations</h2><ol>${analysis.recommendations.map(r => `<li>${r}</li>`).join('')}</ol>`;
+      }
+      html += `<hr><p style="color:#94a3b8;font-size:11px">Generated by AppInsight | ${new Date().toLocaleString()}</p></body></html>`;
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      setTimeout(() => win.print(), 500);
+    },
+
+    exportComparePDF() {
+      if (!this.compareResults.length) return;
+      let html = `<html><head><title>App Comparison - AppInsight</title><style>
+        body{font-family:system-ui;max-width:900px;margin:40px auto;padding:0 20px;color:#1e293b}
+        h1{font-size:24px;border-bottom:2px solid #818cf8;padding-bottom:8px}
+        table{width:100%;border-collapse:collapse;margin:16px 0}
+        td,th{border:1px solid #e2e8f0;padding:10px;font-size:13px}
+        th{background:#f8fafc;font-weight:600}
+        .best{color:#16a34a;font-weight:bold}
+        @media print{body{margin:0}}
+      </style></head><body><h1>App Comparison</h1>`;
+      html += `<table><tr><th>Metric</th>`;
+      this.compareResults.forEach(a => html += `<th style="text-align:center">${a.title || a.app_id}</th>`);
+      html += `</tr>`;
+      this.compareRows.forEach(row => {
+        html += `<tr><td>${row.label}</td>`;
+        this.compareResults.forEach(a => {
+          const cls = row.best === a.app_id ? ' class="best"' : '';
+          html += `<td style="text-align:center"${cls}>${row.fn(a)}</td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</table><hr><p style="color:#94a3b8;font-size:11px">Generated by AppInsight | ${new Date().toLocaleString()}</p></body></html>`;
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      setTimeout(() => win.print(), 500);
+    },
+  };
+}
+</script>
+</body>
+</html>
